@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Radarr Tag Updater
-Fetches movies from Radarr API and updates tags.
+Sonarr Tag Updater
+Fetches shows from Sonarr API and updates tags based on minimum episode scores.
 """
 
 import os
@@ -17,7 +17,7 @@ from requests.exceptions import RequestException
 def parse_args():
     """Parse command line arguments"""
     import argparse
-    parser = argparse.ArgumentParser(description='Radarr Tag Updater')
+    parser = argparse.ArgumentParser(description='Sonarr Tag Updater')
     parser.add_argument('--config', default='config.json',
                       help='Path to config file (default: config.json)')
     parser.add_argument('--test', action='store_true',
@@ -33,14 +33,28 @@ def parse_args():
 def load_config(config_path: str):
     """Load configuration from JSON file"""
     try:
+        logging.debug(f"Attempting to load config from: {os.path.abspath(config_path)}")
         with open(config_path) as f:
             config = json.load(f)
+        
+        # Validate required fields
+        required_keys = ['sonarr_url', 'sonarr_api_key']
+        for key in required_keys:
+            if key not in config:
+                raise ValueError(f"Missing required config key: {key}")
         
         # Create output directory if needed
         output_dir = config.get('output_directory', 'results')
         os.makedirs(output_dir, exist_ok=True)
         
+        logging.debug("Config loaded successfully")
         return config
+    except json.JSONDecodeError as e:
+        logging.error(f"Invalid JSON in config file: {str(e)}")
+        sys.exit(1)
+    except FileNotFoundError:
+        logging.error(f"Config file not found at: {os.path.abspath(config_path)}")
+        sys.exit(1)
     except Exception as e:
         logging.error(f"Failed to load config: {str(e)}")
         sys.exit(1)
@@ -97,7 +111,7 @@ def main():
     args = parse_args()
     
     if args.version:
-        print(f"Radarr Tag Updater v{VERSION}")
+        print(f"Sonarr Tag Updater v{VERSION}")
         sys.exit(0)
     
     # Load configuration
@@ -110,8 +124,8 @@ def main():
         config['log_level'] = args.log_level
     
     # Set global config
-    RADARR_URL = config['radarr_url']
-    RADARR_API_KEY = config['radarr_api_key']
+    SONARR_URL = config['sonarr_url']
+    SONARR_API_KEY = config['sonarr_api_key']
     LOG_LEVEL = config.get('log_level', 'INFO')
     OUTPUT_DIR = config.get('output_directory', 'results')
     OUTPUT_FORMAT = config.get('output_format', 'json')
@@ -120,14 +134,14 @@ def main():
         OUTPUT_FORMAT = 'json'
 
     setup_logging(LOG_LEVEL)
-    logging.info("Starting Radarr Tag Updater v%s", VERSION)
+    logging.info("Starting Sonarr Tag Updater v%s", VERSION)
     
     try:
         # Initialize API client
-        api = RadarrAPI(RADARR_URL, RADARR_API_KEY)
+        api = SonarrAPI(SONARR_URL, SONARR_API_KEY)
         
         # Fetch required data
-        movies = api.get_movies()
+        shows = api.get_shows()
         all_tags = api.get_tags()
         
         # Create tag name to ID mapping
@@ -148,83 +162,93 @@ def main():
                 tag_map[tag] = new_tag['id']
         
         if args.test:
-            movies = movies[:5]
-            logging.info("TEST MODE: Processing first 5 movies only")
+            shows = shows[:5]
+            logging.info("TEST MODE: Processing first 5 shows only")
 
-        # Process and update movie tags
+        # Process and update show tags
         score_threshold = config.get('score_threshold', 100)
         updated_count = 0
         all_updates = []
 
-        for movie in movies:
-            # Create a copy of the movie data to preserve all fields
-            movie_update = movie.copy()
-            current_tags = set(movie.get('tags', []))
+        for show in shows:
+            # Create a copy of the show data to preserve all fields
+            show_update = show.copy()
+            current_tags = set(show.get('tags', []))
             
             # Remove any existing score tags (by ID)
             new_tag_ids = [tag_id for tag_id in current_tags 
                          if not any(tag['id'] == tag_id and tag['label'] in score_tags 
                                   for tag in all_tags)]
             
-            # Get movie file and score
-            score = None
-            if movie.get('movieFileId'):
-                try:
-                    movie_file = api.get_movie_file(movie['movieFileId'])
-                    score = movie_file.get('customFormatScore')
-                except RequestException:
-                    logging.warning(f"Failed to get movie file for {movie['title']}")
+            # Get all episode files and find minimum score
+            min_score = None
+            has_4k = False
+            has_motong = False
             
-            new_tag_name = get_score_tag(score, score_threshold)
-            logging.debug(f"Movie: {movie['title']} - Score: {score} - Tag: {new_tag_name}")
+            try:
+                episode_files = api.get_episode_files(show['id'])
+                for ep_file in episode_files:
+                    # Track minimum score
+                    ep_score = ep_file.get('customFormatScore')
+                    if min_score is None or (ep_score is not None and ep_score < min_score):
+                        min_score = ep_score
+                    
+                    # Check for 4k
+                    quality = ep_file.get('quality', {})
+                    if quality.get('quality', {}).get('resolution') == 2160:
+                        has_4k = True
+                    
+                    # Check for motong
+                    if ep_file.get('releaseGroup', '').lower() == 'motong':
+                        has_motong = True
+            except RequestException:
+                logging.warning(f"Failed to get episode files for {show['title']}")
+            
+            # Determine score tag
+            new_tag_name = get_score_tag(min_score, score_threshold)
+            logging.debug(f"Show: {show['title']} - Min Score: {min_score} - Tag: {new_tag_name}")
             new_tag_ids.append(tag_map[new_tag_name])
             
-            # Add motong tag if release group matches
-            if movie.get('movieFileId'):
-                try:
-                    movie_file = api.get_movie_file(movie['movieFileId'])
-                    if movie_file.get('releaseGroup', '').lower() == 'motong':
-                        new_tag_ids.append(tag_map['motong'])
-                        logging.debug(f"Added motong tag for {movie['title']}")
-                    
-                    # Add 4k tag if resolution is 2160p
-                    quality = movie_file.get('quality', {})
-                    if quality.get('quality', {}).get('resolution') == 2160:
-                        new_tag_ids.append(tag_map['4k'])
-                        logging.debug(f"Added 4k tag for {movie['title']}")
-                except RequestException:
-                    pass  # Already logged earlier
+            # Add motong tag if any episode has it
+            if has_motong:
+                new_tag_ids.append(tag_map['motong'])
+                logging.debug(f"Added motong tag for {show['title']}")
+            
+            # Add 4k tag if any episode is 4k
+            if has_4k:
+                new_tag_ids.append(tag_map['4k'])
+                logging.debug(f"Added 4k tag for {show['title']}")
             
             # Only update if tags changed
             if set(new_tag_ids) != current_tags:
-                movie_update['tags'] = new_tag_ids
-                success = api.update_movie(movie['id'], movie_update)
+                show_update['tags'] = new_tag_ids
+                success = api.update_show(show['id'], show_update)
                 if success:
                     updated_count += 1
-                    logging.debug(f"Updated tags for {movie['title']}")
+                    logging.debug(f"Updated tags for {show['title']}")
                 
                 # Record update attempt (using tag names instead of IDs)
                 all_updates.append({
-                    'id': movie['id'],
-                    'title': movie['title'],
+                    'id': show['id'],
+                    'title': show['title'],
                     'old_tags': [next((tag['label'] for tag in all_tags if tag['id'] == tag_id), tag_id)
                                for tag_id in current_tags],
                     'new_tags': [next((tag['label'] for tag in all_tags if tag['id'] == tag_id), tag_id)
                                for tag_id in new_tag_ids],
-                    'score': score,
+                    'score': min_score,
                     'threshold': score_threshold,
                     'success': success
                 })
 
-        logging.info(f"Processing complete. Updated {updated_count}/{len(movies)} movies")
+        logging.info(f"Processing complete. Updated {updated_count}/{len(shows)} shows")
         write_results(all_updates, OUTPUT_FORMAT, OUTPUT_DIR)
         
     except Exception as e:
         logging.error(f"Script failed: {str(e)}")
         sys.exit(1)
 
-class RadarrAPI:
-    """Client for Radarr API interactions"""
+class SonarrAPI:
+    """Client for Sonarr API interactions"""
     
     def __init__(self, base_url: str, api_key: str):
         self.base_url = base_url.rstrip('/')
@@ -235,19 +259,19 @@ class RadarrAPI:
             'Accept': 'application/json'
         })
     
-    def get_movies(self) -> List[Dict]:
-        """Fetch all movies from Radarr"""
-        endpoint = f"{self.base_url}/api/v3/movie"
+    def get_shows(self) -> List[Dict]:
+        """Fetch all shows from Sonarr"""
+        endpoint = f"{self.base_url}/api/v3/series"
         try:
             response = self.session.get(endpoint)
             response.raise_for_status()
             return response.json()
         except RequestException as e:
-            logging.error(f"Failed to fetch movies: {str(e)}")
+            logging.error(f"Failed to fetch shows: {str(e)}")
             raise
 
     def get_tags(self) -> List[Dict]:
-        """Fetch all tags from Radarr"""
+        """Fetch all tags from Sonarr"""
         endpoint = f"{self.base_url}/api/v3/tag"
         try:
             response = self.session.get(endpoint)
@@ -258,7 +282,7 @@ class RadarrAPI:
             raise
 
     def create_tag(self, label: str, color: str = "#808080") -> Dict:
-        """Create a new tag in Radarr"""
+        """Create a new tag in Sonarr"""
         endpoint = f"{self.base_url}/api/v3/tag"
         try:
             response = self.session.post(endpoint, json={
@@ -271,26 +295,26 @@ class RadarrAPI:
             logging.error(f"Failed to create tag '{label}': {str(e)}")
             raise
 
-    def get_movie_file(self, movie_file_id: int) -> Dict:
-        """Fetch movie file details from Radarr"""
-        endpoint = f"{self.base_url}/api/v3/moviefile/{movie_file_id}"
+    def get_episode_files(self, series_id: int) -> List[Dict]:
+        """Fetch all episode files for a show from Sonarr"""
+        endpoint = f"{self.base_url}/api/v3/episodefile?seriesId={series_id}"
         try:
             response = self.session.get(endpoint)
             response.raise_for_status()
             return response.json()
         except RequestException as e:
-            logging.error(f"Failed to fetch movie file {movie_file_id}: {str(e)}")
+            logging.error(f"Failed to fetch episode files for series {series_id}: {str(e)}")
             raise
 
-    def update_movie(self, movie_id: int, movie_data: Dict) -> bool:
-        """Update a movie in Radarr"""
-        endpoint = f"{self.base_url}/api/v3/movie/{movie_id}"
+    def update_show(self, series_id: int, series_data: Dict) -> bool:
+        """Update a show in Sonarr"""
+        endpoint = f"{self.base_url}/api/v3/series/{series_id}"
         try:
-            response = self.session.put(endpoint, json=movie_data)
+            response = self.session.put(endpoint, json=series_data)
             response.raise_for_status()
             return True
         except RequestException as e:
-            logging.error(f"Failed to update movie {movie_id}. Response: {response.text if 'response' in locals() else ''}. Error: {str(e)}")
+            logging.error(f"Failed to update show {series_id}. Response: {response.text if 'response' in locals() else ''}. Error: {str(e)}")
             return False
 
 def setup_logging(log_level):
@@ -299,7 +323,7 @@ def setup_logging(log_level):
         level=log_level,
         format='%(asctime)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler('radarr_tag_updater.log'),
+            logging.FileHandler('sonarr_tag_updater.log'),
             logging.StreamHandler()
         ]
     )
