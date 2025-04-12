@@ -6,7 +6,7 @@ Automatically updates show tags in Sonarr based on minimum episode scores and ot
 
 - **Score-based tagging** (uses minimum score across all episodes):
   - `negative_score` when any episode's customFormatScore < 0
-  - `positive_score` when all episodes' customFormatScore > threshold (default: 300)
+  - `positive_score` when all episodes' customFormatScore > threshold (default: 100)
   - `no_score` when any episode has no score or scores between 0-threshold
 
 - **Release group tagging**:

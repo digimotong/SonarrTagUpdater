@@ -1,7 +1,7 @@
 {
     "sonarr_url": "http://localhost:8989",
     "sonarr_api_key": "",
-    "score_threshold": 300,
+    "score_threshold": 100,
     "log_level": "INFO",
     "output_directory": "results"
 }
