@@ -1,3 +1,8 @@
-config.json
-results/*
-sonarr_tag_updater.log
+*
+*/
+
+!.gitignore
+!README.md
+!config.example.json
+!sonarr_tag_updater.py
+!requirements.txt
