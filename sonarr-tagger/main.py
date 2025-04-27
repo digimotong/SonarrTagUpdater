@@ -133,17 +133,32 @@ def get_score_tag(score: int, threshold: int) -> str:
 VERSION = "1.0.0"
 
 @dataclass
-class TagUpdateData:
-    """Container for tag update operation parameters"""
+class SonarrContext:
+    """Container for Sonarr-related parameters"""
     api: SonarrAPI
     show: Dict
+    config: Dict
+
+@dataclass
+class TagContext:
+    """Container for tag-related parameters"""
     current_tags: Set[int]
     tag_map: Dict[str, int]
+
+@dataclass
+class ScoreContext:
+    """Container for score-related parameters"""
     min_score: Optional[int]
     score_threshold: int
+
+@dataclass
+class TagUpdateData:
+    """Container for tag update operation parameters"""
+    sonarr: SonarrContext
+    tags: TagContext
+    scores: ScoreContext
     has_4k: bool
     has_motong: bool
-    config: Dict
 
 SCORE_TAGS = {
     'negative_score': '#ff0000',
@@ -179,22 +194,22 @@ def _process_episode_files(api: SonarrAPI, show_id: int) -> tuple:
 
 def _update_show_tags(data: TagUpdateData) -> bool:
     """Update tags for a show based on collected data"""
-    show_update = data.show.copy()
-    new_tag_ids = [tag_id for tag_id in data.current_tags
+    show_update = data.sonarr.show.copy()
+    new_tag_ids = [tag_id for tag_id in data.tags.current_tags
                   if not any(tag['id'] == tag_id and tag['label'] in SCORE_TAGS
-                           for tag in data.api.get_tags())]
+                           for tag in data.sonarr.api.get_tags())]
 
-    new_tag_name = get_score_tag(data.min_score, data.score_threshold)
-    new_tag_ids.append(data.tag_map[new_tag_name])
+    new_tag_name = get_score_tag(data.scores.min_score, data.scores.score_threshold)
+    new_tag_ids.append(data.tags.tag_map[new_tag_name])
 
-    if data.has_motong and data.config['motong_enabled']:
-        new_tag_ids.append(data.tag_map['motong'])
+    if data.has_motong and data.sonarr.config['motong_enabled']:
+        new_tag_ids.append(data.tags.tag_map['motong'])
     if data.has_4k:
-        new_tag_ids.append(data.tag_map['4k'])
+        new_tag_ids.append(data.tags.tag_map['4k'])
 
-    if set(new_tag_ids) != data.current_tags:
+    if set(new_tag_ids) != data.tags.current_tags:
         show_update['tags'] = new_tag_ids
-        return data.api.update_show(data.show['id'], show_update)
+        return data.sonarr.api.update_show(data.sonarr.show['id'], show_update)
     return False
 
 def process_show_tags(
@@ -207,15 +222,11 @@ def process_show_tags(
     current_tags = set(show.get('tags', []))
     min_score, has_4k, has_motong = _process_episode_files(api, show['id'])
     update_data = TagUpdateData(
-        api=api,
-        show=show,
-        current_tags=current_tags,
-        tag_map=tag_map,
-        min_score=min_score,
-        score_threshold=score_threshold,
+        sonarr=SonarrContext(api=api, show=show, config=config),
+        tags=TagContext(current_tags=current_tags, tag_map=tag_map),
+        scores=ScoreContext(min_score=min_score, score_threshold=score_threshold),
         has_4k=has_4k,
-        has_motong=has_motong,
-        config=config
+        has_motong=has_motong
     )
     return _update_show_tags(update_data)
 
