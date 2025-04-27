@@ -157,7 +157,7 @@ def process_show_tags(
     min_score = None
     has_4k = False
     has_motong = False
-    
+
     try:
         episode_files = api.get_episode_files(show['id'])
         for ep_file in episode_files:
@@ -165,12 +165,12 @@ def process_show_tags(
             ep_score = ep_file.get('customFormatScore')
             if min_score is None or (ep_score is not None and ep_score < min_score):
                 min_score = ep_score
-            
+
             # Check for 4k
             quality = ep_file.get('quality', {})
             if quality.get('quality', {}).get('resolution') == 2160:
                 has_4k = True
-            
+
             # Check for motong
             if ep_file.get('releaseGroup', '').lower() == 'motong':
                 has_motong = True
