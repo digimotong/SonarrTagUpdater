@@ -9,7 +9,7 @@ import sys
 import argparse
 import logging
 import time
-from typing import Dict, List
+from typing import Dict, List, Optional, Set
 import requests
 from requests.exceptions import RequestException
 
@@ -131,6 +131,67 @@ def get_score_tag(score: int, threshold: int) -> str:
 
 VERSION = "1.0.0"
 
+SCORE_TAGS = {
+    'negative_score': '#ff0000',
+    'positive_score': '#00ff00',
+    'no_score': '#808080',
+    'motong': '#800080',
+    '4k': '#0000ff'
+}
+
+def _process_episode_files(api: SonarrAPI, show_id: int) -> tuple:
+    """Process episode files and return min_score, has_4k, has_motong"""
+    min_score = None
+    has_4k = False
+    has_motong = False
+    
+    try:
+        episode_files = api.get_episode_files(show_id)
+        for ep_file in episode_files:
+            ep_score = ep_file.get('customFormatScore')
+            if min_score is None or (ep_score is not None and ep_score < min_score):
+                min_score = ep_score
+
+            quality = ep_file.get('quality', {})
+            if quality.get('quality', {}).get('resolution') == 2160:
+                has_4k = True
+
+            if ep_file.get('releaseGroup', '').lower() == 'motong':
+                has_motong = True
+    except RequestException:
+        logging.warning("Failed to get episode files for show %s", show_id)
+    
+    return min_score, has_4k, has_motong
+
+def _update_show_tags(
+        api: SonarrAPI,
+        show: Dict,
+        current_tags: Set[int],
+        tag_map: Dict[str, int],
+        min_score: Optional[int],
+        score_threshold: int,
+        has_4k: bool,
+        has_motong: bool,
+        config: Dict) -> bool:
+    """Update tags for a show based on collected data"""
+    show_update = show.copy()
+    new_tag_ids = [tag_id for tag_id in current_tags
+                  if not any(tag['id'] == tag_id and tag['label'] in SCORE_TAGS
+                           for tag in api.get_tags())]
+
+    new_tag_name = get_score_tag(min_score, score_threshold)
+    new_tag_ids.append(tag_map[new_tag_name])
+
+    if has_motong and config['motong_enabled']:
+        new_tag_ids.append(tag_map['motong'])
+    if has_4k:
+        new_tag_ids.append(tag_map['4k'])
+
+    if set(new_tag_ids) != current_tags:
+        show_update['tags'] = new_tag_ids
+        return api.update_show(show['id'], show_update)
+    return False
+
 def process_show_tags(
         api: SonarrAPI,
         show: Dict,
@@ -138,84 +199,18 @@ def process_show_tags(
         score_threshold: int,
         config: Dict) -> bool:
     """Process and update tags for a single show"""
-    show_update = show.copy()
     current_tags = set(show.get('tags', []))
-
-    # Remove any existing score tags (by ID)
-    score_tags = {
-        'negative_score': '#ff0000',
-        'positive_score': '#00ff00',
-        'no_score': '#808080',
-        'motong': '#800080',
-        '4k': '#0000ff'
-    }
-    new_tag_ids = [tag_id for tag_id in current_tags
-                 if not any(tag['id'] == tag_id and tag['label'] in score_tags
-                          for tag in api.get_tags())]
-
-    # Get episode files and find minimum score
-    min_score = None
-    has_4k = False
-    has_motong = False
-
-    try:
-        episode_files = api.get_episode_files(show['id'])
-        for ep_file in episode_files:
-            # Track minimum score
-            ep_score = ep_file.get('customFormatScore')
-            if min_score is None or (ep_score is not None and ep_score < min_score):
-                min_score = ep_score
-
-            # Check for 4k
-            quality = ep_file.get('quality', {})
-            if quality.get('quality', {}).get('resolution') == 2160:
-                has_4k = True
-
-            # Check for motong
-            if ep_file.get('releaseGroup', '').lower() == 'motong':
-                has_motong = True
-    except RequestException:
-        logging.warning("Failed to get episode files for %s", show['title'])
-
-    # Determine score tag
-    new_tag_name = get_score_tag(min_score, score_threshold)
-    logging.debug(
-        "Show: %s - Min Score: %s - Tag: %s",
-        show['title'],
-        min_score,
-        new_tag_name)
-    new_tag_ids.append(tag_map[new_tag_name])
-
-    # Add special tags if needed
-    if has_motong and config['motong_enabled']:
-        new_tag_ids.append(tag_map['motong'])
-        logging.debug("Added motong tag for %s", show['title'])
-
-    if has_4k:
-        new_tag_ids.append(tag_map['4k'])
-        logging.debug("Added 4k tag for %s", show['title'])
-
-    # Only update if tags changed
-    if set(new_tag_ids) != current_tags:
-        show_update['tags'] = new_tag_ids
-        return api.update_show(show['id'], show_update)
-    return False
-
+    min_score, has_4k, has_motong = _process_episode_files(api, show['id'])
+    return _update_show_tags(
+        api, show, current_tags, tag_map,
+        min_score, score_threshold, has_4k, has_motong, config)
 
 def ensure_required_tags(api: SonarrAPI) -> Dict:
     """Ensure required tags exist and return tag name to ID mapping"""
     all_tags = api.get_tags()
     tag_map = {tag['label']: tag['id'] for tag in all_tags}
 
-    score_tags = {
-        'negative_score': '#ff0000',
-        'positive_score': '#00ff00',
-        'no_score': '#808080',
-        'motong': '#800080',
-        '4k': '#0000ff'
-    }
-
-    for tag, color in score_tags.items():
+    for tag, color in SCORE_TAGS.items():
         if tag not in tag_map:
             logging.info("Creating missing tag: %s", tag)
             new_tag = api.create_tag(tag, color)
