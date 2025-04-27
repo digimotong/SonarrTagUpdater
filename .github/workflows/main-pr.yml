@@ -22,4 +22,4 @@ jobs:
       - name: Install pylint
         run: pip install pylint
       - name: Run pylint
-        run: pylint glueforward
+        run: pylint sonarr-tagger

@@ -11,7 +11,7 @@ RUN pip install -r /tmp/requirements.txt
 RUN rm /tmp/requirements.txt
 
 # Install app
-COPY radarr-tagger /radarr-tagger
-WORKDIR /radarr-tagger
+COPY sonarr-tagger /sonarr-tagger
+WORKDIR /sonarr-tagger
 
 CMD ["python", "main.py"]
