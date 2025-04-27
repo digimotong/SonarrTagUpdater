@@ -144,7 +144,7 @@ def _process_episode_files(api: SonarrAPI, show_id: int) -> tuple:
     min_score = None
     has_4k = False
     has_motong = False
-    
+
     try:
         episode_files = api.get_episode_files(show_id)
         for ep_file in episode_files:
@@ -160,7 +160,7 @@ def _process_episode_files(api: SonarrAPI, show_id: int) -> tuple:
                 has_motong = True
     except RequestException:
         logging.warning("Failed to get episode files for show %s", show_id)
-    
+
     return min_score, has_4k, has_motong
 
 def _update_show_tags(
