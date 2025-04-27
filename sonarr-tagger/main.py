@@ -187,10 +187,10 @@ def process_show_tags(
     new_tag_ids.append(tag_map[new_tag_name])
 
     # Add special tags if needed
-    if has_motong:
+    if has_motong and config['motong_enabled']:
         new_tag_ids.append(tag_map['motong'])
         logging.debug("Added motong tag for %s", show['title'])
-    
+
     if has_4k:
         new_tag_ids.append(tag_map['4k'])
         logging.debug("Added 4k tag for %s", show['title'])
@@ -262,7 +262,7 @@ def main():
             time.sleep(300)
 
 def setup_logging(log_level):
-    """Configure logging with forced flushing"""
+    """Configure logging"""
     log_format = '%(asctime)s - %(levelname)s - %(message)s'
 
     # Clear any existing handlers
