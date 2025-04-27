@@ -3,6 +3,15 @@
 
 !.gitignore
 !README.md
-!config.example.json
-!sonarr_tag_updater.py
+
+!.github
+!.github/*
+!.github/workflows
+!.github/workflows/*
+
+!.env.example
+!sonarr-tagger
+!sonarr-tagger/*
 !requirements.txt
+!Dockerfile
+!.pylintrc
