@@ -11,10 +11,10 @@ Automatically updates show tags in Sonarr based on custom format scores, release
   - `no_score` (gray) when score is None or between 0-threshold
 
 - **Release group tagging**:
-  - `motong` (purple) when ANY episode file has release group "motong" (configurable via MOTONG env var)
+  - `motong` (purple) when ANY episode file has release group "motong" (configurable via TAG_MOTONG env var)
 
 - **Quality tagging**:
-  - `4k` (blue) when ANY episode file has 2160p resolution
+  - `4k` (blue) when ANY episode file has 2160p resolution (configurable via TAG_4K env var)
 
 ## Containerized Deployment
 
@@ -34,7 +34,8 @@ services:
       LOG_LEVEL: INFO                 # DEBUG, INFO, WARNING, ERROR
       SCORE_THRESHOLD: 100            # Threshold for positive_score
       INTERVAL_MINUTES: 20            # Minutes between runs
-      MOTONG: true                    # Enable motong tagging
+      TAG_MOTONG: true                # Enable motong tagging
+      TAG_4K: true                    # Enable 4k tagging
 ```
 
 ### Required Environment Variables
@@ -51,7 +52,8 @@ services:
 | `LOG_LEVEL` | `INFO` | Logging verbosity (DEBUG, INFO, WARNING, ERROR) |
 | `SCORE_THRESHOLD` | `100` | Score threshold for positive_score tag |
 | `INTERVAL_MINUTES` | `20` | Minutes between automatic runs |
-| `MOTONG` | `false` | Enable motong release group tagging |
+| `TAG_MOTONG` | `false` | Enable motong release group tagging |
+| `TAG_4K` | `false` | Enable 4k resolution tagging |
 
 ## Tag Management
 
@@ -62,8 +64,8 @@ The application automatically creates and manages these tags:
 | negative_score | #ff0000 | LOWEST episode score < 0 |
 | positive_score | #00ff00 | LOWEST episode score > threshold |
 | no_score | #808080 | No score or 0 ≤ score ≤ threshold |
-| motong | #800080 | ANY episode file contains "motong" |
-| 4k | #0000ff | ANY episode file is 2160p |
+| motong | #800080 | ANY episode file contains "motong" (requires TAG_MOTONG=true) |
+| 4k | #0000ff | ANY episode file is 2160p (requires TAG_4K=true) |
 
 Tags are created automatically if they don't exist in Sonarr.
 

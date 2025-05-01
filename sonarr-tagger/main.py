@@ -109,7 +109,8 @@ def get_config_from_env():
         'sonarr_api_key': os.environ['SONARR_API_KEY'],
         'log_level': os.getenv('LOG_LEVEL', 'INFO'),
         'score_threshold': int(os.getenv('SCORE_THRESHOLD', '100')),
-        'motong_enabled': os.getenv('MOTONG', 'false').lower() == 'true'
+        'tag_motong_enabled': os.getenv('TAG_MOTONG', 'false').lower() == 'true',
+        'tag_4k_enabled': os.getenv('TAG_4K', 'false').lower() == 'true'
     }
 
     # Validate required fields
@@ -202,9 +203,9 @@ def _update_show_tags(data: TagUpdateData) -> bool:
     new_tag_name = get_score_tag(data.scores.min_score, data.scores.score_threshold)
     new_tag_ids.append(data.tags.tag_map[new_tag_name])
 
-    if data.has_motong and data.sonarr.config['motong_enabled']:
+    if data.has_motong and data.sonarr.config['tag_motong_enabled']:
         new_tag_ids.append(data.tags.tag_map['motong'])
-    if data.has_4k:
+    if data.has_4k and data.sonarr.config['tag_4k_enabled']:
         new_tag_ids.append(data.tags.tag_map['4k'])
 
     if set(new_tag_ids) != data.tags.current_tags:
