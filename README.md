@@ -34,8 +34,8 @@ services:
       LOG_LEVEL: INFO                 # DEBUG, INFO, WARNING, ERROR
       SCORE_THRESHOLD: 100            # Threshold for positive_score
       INTERVAL_MINUTES: 20            # Minutes between runs
-      TAG_4K: true                    # Enable 4k tagging
-      TAG_MOTONG: true                # Enable motong tagging
+      # TAG_4K: true                  # Enable 4k tagging
+      # TAG_MOTONG: true              # Enable motong tagging
 ```
 
 ### Required Environment Variables
